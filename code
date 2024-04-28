@@ -1,0 +1,85 @@
+import ee
+import geemap
+import os
+
+# Authenticate Google Earth Engine
+ee.Authenticate()
+ee.Initialize()
+
+# Declare global variables
+SWI = None
+SWI_2 = None
+
+# Import necessary libraries
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+import pandas as pd
+
+def SWI_image_sentienl2(image, output_path, fc):
+    global SWI, SWI_2  # Declaration of global variables
+    Map = geemap.Map()
+    
+    # Select bands from the Sentinel-2 image
+    image_sat = ee.Image(image).select(['B3', 'B8', 'B11'])
+    Map.addLayer(image_sat)
+    
+    # Remove existing file if present
+    if os.path.exists(output_path):
+        os.remove(output_path)
+        print(f"Existing file '{output_path}' has been removed.")
+    
+    # Extract values to points
+    geemap.extract_values_to_points(fc, image_sat, output_path)
+    
+    # Convert CSV file to DataFrame
+    SWI = geemap.csv_to_df(output_path)
+    
+    # Calculate Soil Water Index (SWI)
+    SWI['SWI'] = (SWI['B3'] * (SWI['B8'] - SWI['B11'])) / ((SWI['B3'] + SWI['B8']) * (SWI['B8'] + SWI['B11']))
+    
+    # Create frequency histogram
+    plt.figure(figsize=(8, 6))
+    SWI['SWI'].hist(bins=20, color='skyblue', edgecolor='black', alpha=0.7)
+    plt.title('SWI Distribution')
+    plt.xlabel('SWI')
+    plt.ylabel('Frequency')
+    plt.grid(True)
+    plt.show()
+    
+    # Print summary statistics
+    summary_stats = SWI['SWI'].describe()
+    print(summary_stats)
+    
+    return SWI
+
+# Extract SWI values for July 19, 2016
+SWI_2 = SWI_image_sentienl2("COPERNICUS/S2/20160719T162342_20160719T162739_T17TLK", 'sentinel2.csv', 'ROI_6/Fishnet_3_label.shp')
+
+# Extract SWI values from global variables
+col1 = SWI['SWI']
+col2 = SWI_2['SWI']
+
+# Combine SWI values into a single DataFrame
+data = pd.concat([col1, col2], axis=1)
+
+# Standardize the data
+scaler = StandardScaler()
+data_scaled = scaler.fit_transform(data)
+
+# Instantiate PCA object with two principal components
+pca = PCA(n_components=2)
+
+# Apply PCA to the data
+pca.fit(data_scaled)
+transformed_data = pca.transform(data_scaled)
+
+# Visualize the transformed data
+plt.figure(figsize=(8, 6))
+plt.scatter(transformed_data[:, 0], transformed_data[:, 1])
+plt.title('Comparison of SWI and SWI_2 Data')
+plt.xlabel('Principal Component 1')
+plt.ylabel('Principal Component 2')
+plt.grid(True)
+plt.show()
